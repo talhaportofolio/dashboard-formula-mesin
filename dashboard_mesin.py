@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import re
+import plotly.express as px
 
 # Konfigurasi halaman agar lebar
 st.set_page_config(page_title="Data Viewer", layout="wide", page_icon="⚙️")
@@ -30,7 +31,7 @@ if st.session_state.current_page == 'landing':
         final_file_path = None
         
         if source_option == "Upload File Excel":
-            uploaded_file = st.file_uploader("📂 Upload File LKM (.xlsx, .csv)", type=["xlsx", "csv"])
+            uploaded_file = st.file_uploader("📂 Upload File Mesin (.xlsx, .csv)", type=["xlsx", "csv"])
             if uploaded_file:
                 final_file_path = uploaded_file
 
@@ -126,5 +127,63 @@ elif st.session_state.current_page == 'viewer':
     st.success("Data berhasil dimuat! Baris dan kolom yang di-merge telah diratakan agar mudah dibaca.")
     
     if st.session_state.df_main is not None:
-        # Menampilkan tabel
-        st.dataframe(st.session_state.df_main, use_container_width=True, height=600)
+        df = st.session_state.df_main.copy()
+        
+        # Membuat 2 kolom bersebelahan (Kiri untuk grafik, Kanan untuk tabel)
+        # Rasio 1 : 2 agar tabel mendapatkan porsi layar yang lebih lebar
+        col_kiri, col_kanan = st.columns([1, 2])
+        
+        with col_kiri:
+            # --- LOGIKA GRAFIK KERUSAKAN MESIN ---
+            st.markdown("### 📊 Frekuensi Kerusakan")
+            
+            # Cari semua kolom yang memiliki kata "KERUSAKAN" di judulnya
+            kolom_kerusakan = [col for col in df.columns if 'KERUSAKAN' in str(col).upper()]
+            
+            if kolom_kerusakan:
+                def cek_rusak(val):
+                    v = str(val).strip().lower()
+                    if v in ['nan', 'none', '', '-', '0']:
+                        return 0
+                    return 1
+                
+                # Menghitung jumlah hari rusak
+                df['Jumlah Kerusakan'] = df[kolom_kerusakan].apply(lambda x: x.map(cek_rusak)).sum(axis=1)
+                
+                df_grafik = df[['NAMA MESIN', 'Jumlah Kerusakan']].copy()
+                df_grafik['NAMA MESIN'] = df_grafik['NAMA MESIN'].astype(str)
+                df_grafik = df_grafik.groupby('NAMA MESIN')['Jumlah Kerusakan'].sum().reset_index()
+                df_grafik = df_grafik[df_grafik['Jumlah Kerusakan'] > 0]
+                df_grafik = df_grafik.sort_values(by='Jumlah Kerusakan', ascending=True)
+                
+                if not df_grafik.empty:
+                    # Mengatur tinggi container sama dengan tinggi tabel (600px) agar sejajar rapi
+                    with st.container(height=600):
+                        dynamic_height = max(400, len(df_grafik) * 40)
+                        
+                        fig = px.bar(
+                            df_grafik, 
+                            x='Jumlah Kerusakan', 
+                            y='NAMA MESIN', 
+                            orientation='h',
+                            text_auto=True
+                        )
+                        
+                        fig.update_layout(
+                            height=dynamic_height,
+                            yaxis={'categoryorder':'total ascending'},
+                            margin=dict(l=0, r=0, t=10, b=0),
+                            xaxis_title="Total Hari Rusak",
+                            yaxis_title="Nama Mesin"
+                        )
+                        
+                        st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("Belum ada data kerusakan yang tercatat di file ini.")
+            else:
+                st.warning("Kolom berisi 'KERUSAKAN' tidak ditemukan.")
+
+        with col_kanan:
+            # --- MENAMPILKAN TABEL KESELURUHAN ---
+            st.markdown("### 📋 Detail Data Keseluruhan")
+            st.dataframe(st.session_state.df_main, use_container_width=True, height=600)
