@@ -99,8 +99,10 @@ if 'df_main' not in st.session_state:
     st.session_state.df_main = None
 if 'selected_machine' not in st.session_state:
     st.session_state.selected_machine = None
-if 'filter_area' not in st.session_state:
-    st.session_state.filter_area = ["MOLD", "INJECTION", "FILLING", "CUTTING", "PACKING", "UTILITY"]
+if 'saved_filter_area' not in st.session_state:
+    st.session_state.saved_filter_area = ["MOLD", "INJECTION", "FILLING", "CUTTING", "PACKING", "UTILITY"]
+if 'chart_key' not in st.session_state:
+    st.session_state.chart_key = 0
 if 'file_path' not in st.session_state:
     st.session_state.file_path = None
 
@@ -147,13 +149,15 @@ if st.session_state.current_page == 'landing':
                         if not df_loaded.empty:
                             st.session_state.df_main = df_loaded
                             st.session_state.file_path = final_file_path # Simpan untuk refresh
-                            st.session_state.filter_area = ["MOLD", "INJECTION", "FILLING", "CUTTING", "PACKING", "UTILITY"]
+                            st.session_state.saved_filter_area = ["MOLD", "INJECTION", "FILLING", "CUTTING", "PACKING", "UTILITY"]
+                            st.session_state.chart_key = 0
                             st.session_state.current_page = 'viewer'
                             st.rerun()
                         else:
                             st.error("Data kosong atau gagal dibaca.")
                     except Exception as e:
                         st.error(f"Terjadi kesalahan saat memproses data: {e}")
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # ==========================================
 # PAGE 2: DATA VIEWER (TABEL & GRAFIK)
@@ -180,7 +184,7 @@ elif st.session_state.current_page == 'viewer':
         if st.button("⬅️ Ganti File"):
             st.session_state.current_page = 'landing'
             st.session_state.df_main = None
-            st.session_state.filter_area = ["MOLD", "INJECTION", "FILLING", "CUTTING", "PACKING", "UTILITY"]
+            st.session_state.saved_filter_area = ["MOLD", "INJECTION", "FILLING", "CUTTING", "PACKING", "UTILITY"]
             st.session_state.file_path = None
             st.cache_data.clear()
             st.rerun()
@@ -188,22 +192,27 @@ elif st.session_state.current_page == 'viewer':
     if st.session_state.df_main is not None:
         df = st.session_state.df_main.copy()
         
+        # Fungsi callback untuk mengamankan state filter sebelum pindah halaman
+        def update_filter():
+            st.session_state.saved_filter_area = st.session_state.filter_area_widget
+        
         # --- TOP BAR: METRICS & FILTER SEJAJAR ---
         col_m1, col_m2, col_f = st.columns([1, 1, 3])
         
         with col_f:
             area_options = ["MOLD", "INJECTION", "FILLING", "CUTTING", "PACKING", "UTILITY"]
             
-            if 'filter_area' not in st.session_state:
-                st.session_state.filter_area = area_options
+            # Kembalikan state filter widget jika sempat dihapus oleh Streamlit (saat pindah page)
+            if 'filter_area_widget' not in st.session_state:
+                st.session_state.filter_area_widget = st.session_state.saved_filter_area
                 
             if hasattr(st, 'pills'):
                 try:
-                    selected_area = st.pills("Filter Area:", area_options, selection_mode="multi", key="filter_area")
+                    selected_area = st.pills("Filter Area:", area_options, selection_mode="multi", key="filter_area_widget", on_change=update_filter)
                 except TypeError:
-                    selected_area = st.multiselect("Filter Area:", area_options, key="filter_area")
+                    selected_area = st.multiselect("Filter Area:", area_options, key="filter_area_widget", on_change=update_filter)
             else:
-                selected_area = st.multiselect("Filter Area:", area_options, key="filter_area")
+                selected_area = st.multiselect("Filter Area:", area_options, key="filter_area_widget", on_change=update_filter)
                 
         # Logika memfilter Dataframe berdasarkan area yang dipilih
         if 'KATEGORI' in df.columns:
@@ -271,7 +280,8 @@ elif st.session_state.current_page == 'viewer':
                             fig, 
                             use_container_width=True, 
                             on_select="rerun", 
-                            selection_mode="points"
+                            selection_mode="points",
+                            key=f"chart_mesin_{st.session_state.chart_key}"
                         )
                         
                         if event and event.get("selection", {}).get("points"):
@@ -301,6 +311,7 @@ elif st.session_state.current_page == 'detail':
     if st.button("⬅️ Kembali ke Dashboard"):
         st.session_state.selected_machine = None
         st.session_state.current_page = 'viewer'
+        st.session_state.chart_key += 1  # Reset memori grafik agar bisa diklik lagi
         st.rerun()
             
     st.markdown(f"### 🔎 Analisis Detail: **{machine_name}**")
